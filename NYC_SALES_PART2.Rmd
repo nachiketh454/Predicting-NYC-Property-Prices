@@ -1,0 +1,569 @@
+---
+output:
+  html_document: default
+  pdf_document: default
+---
+```{r}
+
+library(magrittr) # Make all colnames lower case with no spaces
+library(stringr) # String formatting and replacement
+library(dplyr) # Data wrangling and manipulation
+library(readr) # Load and write csv files
+library(ggplot2) # Data visualization
+library(tidyr)
+library(reshape2)
+library(corrplot)
+# Reading csv
+df_NYCSales2 <- read.csv("C:/Users/nachi/Desktop/Advanced_Analysis/CLEANED_DATA/NYC_Cleaned.csv")
+
+```
+
+```{r}
+
+summary(df_NYCSales2)
+
+#remove 
+Final_NYCSales <- df_NYCSales2[,-c(2,3,4,6,8,9,17)]
+str(Final_NYCSales)
+
+
+#factorize BOROUGH, BUILDING_CLASS_AT_PRESENT, TAX_CLASS_AT_TIME_OF_SALE
+#get dummies
+BUILDING_CLASS_AT_PRESENT_distinct <- unique(Final_NYCSales$BUILDING_CLASS_AT_PRESENT)
+
+print(BUILDING_CLASS_AT_PRESENT_distinct)
+
+#Creating dummy variables
+Final_NYCSales$BUILDING_CLASS_AT_PRESENT <- as.factor(Final_NYCSales$BUILDING_CLASS_AT_PRESENT)
+
+Final_NYCSales$BOROUGH <- as.factor(Final_NYCSales$BOROUGH)
+
+Final_NYCSales$TAX_CLASS_AT_TIME_OF_SALE <- as.factor(Final_NYCSales$TAX_CLASS_AT_TIME_OF_SALE)
+
+Final_NYCSales$BLOCK <- as.numeric(Final_NYCSales$BLOCK)
+Final_NYCSales$RESIDENTIAL_UNITS <- as.numeric(Final_NYCSales$RESIDENTIAL_UNITS)
+Final_NYCSales$GROSS_SQUARE_FEET <- as.numeric(Final_NYCSales$GROSS_SQUARE_FEET)
+Final_NYCSales$LAND_SQUARE_FEET <- as.numeric(Final_NYCSales$LAND_SQUARE_FEET)
+Final_NYCSales$YEAR_SOLD <- as.numeric(Final_NYCSales$YEAR_SOLD)
+Final_NYCSales$MONTH_SOLD <- as.numeric(Final_NYCSales$MONTH_SOLD)
+Final_NYCSales$BUILDING_AGE <- as.numeric(Final_NYCSales$BUILDING_AGE)
+
+str(Final_NYCSales)
+```
+
+Removing outliers:
+
+```{r}
+
+#Remove outliers from SALE.PRICE
+# Calculate the z-scores
+hist(Final_NYCSales$SALE_PRICE)
+boxplot(Final_NYCSales$SALE_PRICE)
+z_scores <- scale(Final_NYCSales$SALE_PRICE)
+
+# Define a threshold for outliers (e.g., 3)
+threshold <- 3
+
+# Identify outliers based on the z-scores
+outliers <- abs(z_scores) > threshold
+
+# Replace outliers with values at a specific percentile (e.g., 95th and 5th percentiles)
+winsorize <- function(x, p) {
+  quantiles <- quantile(x, probs = c(p, 1 - p), na.rm = TRUE)
+  x[x < quantiles[1]] <- quantiles[1]
+  x[x > quantiles[2]] <- quantiles[2]
+  x
+}
+
+# Apply winsorization to remove outliers from both ends
+Final_NYCSales$SALE_PRICE <- winsorize(Final_NYCSales$SALE_PRICE, p = 0.05)
+
+# Alternatively, you can remove outliers by filtering the data
+filtered_data <- Final_NYCSales[!outliers, ]
+
+hist(Final_NYCSales$SALE_PRICE)
+boxplot(Final_NYCSales$SALE_PRICE)
+
+```
+
+```{r}
+#Remove outliers from SALE.PRICE
+# Calculate the z-scores
+hist(Final_NYCSales$GROSS_SQUARE_FEET)
+boxplot(Final_NYCSales$GROSS_SQUARE_FEET)
+z_scores <- scale(Final_NYCSales$GROSS_SQUARE_FEET)
+
+# Define a threshold for outliers (e.g., 3)
+threshold <- 3
+
+# Identify outliers based on the z-scores
+outliers <- abs(z_scores) > threshold
+
+# Replace outliers with values at a specific percentile (e.g., 95th and 5th percentiles)
+winsorize <- function(x, p) {
+  quantiles <- quantile(x, probs = c(p, 1 - p), na.rm = TRUE)
+  x[x < quantiles[1]] <- quantiles[1]
+  x[x > quantiles[2]] <- quantiles[2]
+  x
+}
+
+# Apply winsorization to remove outliers from both ends
+Final_NYCSales$GROSS_SQUARE_FEET <- winsorize(Final_NYCSales$GROSS_SQUARE_FEET, p = 0.05)
+
+# Alternatively, you can remove outliers by filtering the data
+filtered_data <- Final_NYCSales[!outliers, ]
+
+hist(Final_NYCSales$GROSS_SQUARE_FEET)
+boxplot(Final_NYCSales$GROSS_SQUARE_FEET)
+
+```
+
+
+**DIMENSIONS**
+```{r}
+dim(Final_NYCSales)
+str(Final_NYCSales)
+
+```
+
+```{r}
+
+#FINAL COLUMNS CHOSEN FOR REGRESSION
+Final_NYCSales <- Final_NYCSales[,-c(4,5,9,10)]
+Final_LDA_Data <- Final_NYCSales
+str(Final_NYCSales)
+
+```
+
+
+**OLS MODEL**
+```{r}
+#Applying log transforms on SALE PRICE and GROSSSQUAREFEET
+Final_NYCSales$GROSS_SQUARE_FEET <- log(Final_NYCSales$GROSS_SQUARE_FEET)
+hist(Final_NYCSales$GROSS_SQUARE_FEET)
+Final_NYCSales$SALE_PRICE <- log(Final_NYCSales$SALE_PRICE)
+hist(Final_NYCSales$SALE_PRICE)
+
+#OLS MODEL
+# Fit the initial linear regression model
+OLS_MODEL <- lm(SALE_PRICE ~ BOROUGH + BLOCK + GROSS_SQUARE_FEET + TAX_CLASS_AT_TIME_OF_SALE + BUILDING_CLASS_AT_PRESENT + BUILDING_AGE , data = Final_NYCSales)
+summary(OLS_MODEL)
+plot(OLS_MODEL)
+
+```
+
+
+
+**USING DUMMY VARIABLES ON BOROUGH, BUILDING_CLASS_AT_PRESENT, TAX_CLASS_AT_TIME_OF_SALE**
+```{r}
+library(caret)
+# Identify factor variables
+factor_cols <- sapply(Final_NYCSales, is.factor)
+
+# Convert factor variables to dummy variables
+dummy <- dummyVars(paste("~.", collapse = "+"), data = Final_NYCSales[, factor_cols])
+dummy_data <- predict(dummy, newdata = Final_NYCSales[, factor_cols])
+
+# Remove original factor variables from the dataset
+Final_NYCSales <- Final_NYCSales[, !factor_cols]
+
+# Add dummy variables to the dataset
+Final_NYCSales <- cbind(Final_NYCSales, dummy_data)
+
+# Print the updated dataset
+head(Final_NYCSales)
+
+
+```
+
+```{r}
+str(Final_NYCSales)
+```
+
+
+**RIDGE REGRESSION**
+```{r}
+library(glmnet)
+library(ggplot2)
+
+# Split the data into training and test sets
+set.seed(123)  # Set a seed for reproducibility
+train_indices <- sample(1:nrow(Final_NYCSales), 0.7 * nrow(Final_NYCSales))  # 70% for training
+train_data <- Final_NYCSales[train_indices, ]
+test_data <- Final_NYCSales[-train_indices, ]
+
+# Prepare the training data
+train_x <- train_data[, -3]  # Features (excluding target variable)
+train_y <- train_data[, 3]   # Target variable
+
+# Perform ridge regression with cross-validation
+ridge_model <- cv.glmnet(x = as.matrix(train_x), y = train_y, alpha = 0, nfolds = 5)
+plot(ridge_model)
+
+# Find the optimal lambda value
+best_lambda <- ridge_model$lambda.min
+best_lambda
+
+# Train the ridge regression model with the optimal lambda
+final_model <- glmnet(x = as.matrix(train_x), y = train_y, alpha = 0, lambda = best_lambda)
+
+
+# Prepare the test data
+test_x <- test_data[, -3]  # Features (excluding target variable)
+test_y <- test_data[, 3]   # Target variable
+
+# Predict using the trained model
+predictions <- predict(final_model, newx = as.matrix(test_x))
+
+# Store predictions in a separate object
+predicted_values <- as.vector(predictions)
+
+# Create a data frame for plotting
+plot_data <- data.frame(Actual = test_y, Predicted = predicted_values)
+
+# Plot actual vs predicted
+ggplot(plot_data, aes(x = Actual, y = Predicted)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, color = "red") +
+  labs(x = "Actual", y = "Predicted") +
+  ggtitle("Actual vs Predicted")
+
+# Calculate residuals
+residuals <- test_y - predicted_values
+
+# Plot prediction vs residuals
+ggplot(plot_data, aes(x = Predicted, y = residuals)) +
+  geom_point() +
+  geom_hline(yintercept = 0, color = "red") +
+  labs(x = "Predicted", y = "Residuals") +
+  ggtitle("Prediction vs Residuals")
+
+# Evaluate the model
+mse <- mean((predicted_values - test_y)^2)
+rmseRidge <- sqrt(mse)
+
+# Calculate R-squared
+y_mean <- mean(test_y)  # Mean of the actual target variable
+ss_total <- sum((test_y - y_mean)^2)  # Total sum of squares
+ss_residual <- sum((test_y - predicted_values)^2)  # Residual sum of squares
+r_squared <- 1 - (ss_residual / ss_total)
+
+# Calculate adjusted R-squared
+n <- nrow(test_data)  # Number of observations
+p <- ncol(test_x)  # Number of predictors
+adj_r_squared <- 1 - (1 - r_squared) * ((n - 1) / (n - p - 1))
+
+# Print the results
+print(paste("RMSE:", rmseRidge))
+print(paste("R-squared:", r_squared))
+print(paste("Adjusted R-squared:", adj_r_squared))
+
+
+```
+
+
+**LASSO REGRESSION**
+```{r}
+#LASSO regression
+library(glmnet)
+library(ggplot2)
+
+# Split the data into training and test sets
+set.seed(123)  # Set a seed for reproducibility
+train_indices <- sample(1:nrow(Final_NYCSales), 0.7 * nrow(Final_NYCSales))  # 70% for training
+train_data <- Final_NYCSales[train_indices, ]
+test_data <- Final_NYCSales[-train_indices, ]
+
+# Prepare the training data
+train_x <- train_data[, -3]  # Features (excluding target variable)
+train_y <- train_data[, 3]   # Target variable
+
+# Perform Lasso regression with cross-validation
+lasso_model <- cv.glmnet(x = as.matrix(train_x), y = train_y, alpha = 1, nfolds = 5)
+lasso_model
+plot(lasso_model)
+# Find the optimal lambda value
+best_lambda <- lasso_model$lambda.min
+
+# Train the Lasso regression model with the optimal lambda
+final_model <- glmnet(x = as.matrix(train_x), y = train_y, alpha = 1, lambda = best_lambda)
+summary(final_model)
+#Variable effectiveness
+# Get the coefficients of the selected variables
+lasso_coefficients <- coef(final_model)
+
+# Create a data frame to store the variable names and coefficients
+variable_summary <- data.frame(
+  Variable = rownames(lasso_coefficients),
+  Coefficient = lasso_coefficients[,1]
+)
+
+# Sort the variables by the absolute value of the coefficients
+variable_summary <- variable_summary[order(abs(variable_summary$Coefficient), decreasing = TRUE), ]
+
+# Print the summary of variable effectiveness
+print(variable_summary)
+
+# Prepare the test data
+test_x <- test_data[, -3]  # Features (excluding target variable)
+test_y <- test_data[, 3]   # Target variable
+
+# Predict using the trained model
+predictions <- predict(final_model, newx = as.matrix(test_x))
+
+# Store predictions in a separate object
+predicted_values <- as.vector(predictions)
+
+# Create a data frame for plotting
+plot_data <- data.frame(Actual = test_y, Predicted = predicted_values)
+
+# Plot actual vs predicted
+ggplot(plot_data, aes(x = Actual, y = Predicted)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, color = "red") +
+  labs(x = "Actual", y = "Predicted") +
+  ggtitle("Actual vs Predicted")
+
+# Calculate residuals
+residuals <- test_y - predicted_values
+
+# Plot prediction vs residuals
+ggplot(plot_data, aes(x = Predicted, y = residuals)) +
+  geom_point() +
+  geom_hline(yintercept = 0, color = "red") +
+  labs(x = "Predicted", y = "Residuals") +
+  ggtitle("Prediction vs Residuals")
+
+# Evaluate the model
+mse <- mean((predicted_values - test_y)^2)
+rmseLasso <- sqrt(mse)
+
+# Calculate R-squared
+y_mean <- mean(test_y)  # Mean of the actual target variable
+ss_total <- sum((test_y - y_mean)^2)  # Total sum of squares
+ss_residual <- sum((test_y - predicted_values)^2)  # Residual sum of squares
+r_squared <- 1 - (ss_residual / ss_total)
+
+# Calculate adjusted R-squared
+n <- nrow(test_data)  # Number of observations
+p <- ncol(test_x)  # Number of predictors
+adj_r_squared <- 1 - (1 - r_squared) * ((n - 1) / (n - p - 1))
+
+# Print the results
+print(paste("RMSE:", rmseLasso))
+print(paste("R-squared:", r_squared))
+print(paste("Adjusted R-squared:", adj_r_squared))
+
+```
+
+With an RMSE of 0.417 and an adjusted R-squared of 0.362, as well as an R-squared of 0.365, the model appears to have a moderate level of accuracy and goodness of fit.
+
+The RMSE indicates the average difference between the predicted values and the actual values, with a lower value indicating better predictive performance. In this case, an RMSE of 0.417 suggests that, on average, the model's predictions have an error of approximately 0.417 units.
+
+The adjusted R-squared value of 0.362 suggests that the model explains about 36.2% of the variance in the dependent variable after accounting for the number of predictors in the model. This indicates that the model captures a moderate amount of the variability in the data.
+
+The R-squared value of 0.365 indicates that the model explains approximately 36.5% of the variance in the dependent variable, without adjusting for the number of predictors. While this value is slightly higher than the adjusted R-squared, it should be interpreted with caution as it doesn't account for the complexity of the model.
+
+Overall, an adjusted R-squared of 0.362 suggests that the model has some ability to explain the variation in the data, but there is still room for improvement.
+
+**CA**
+```{r}
+
+max(Final_LDA_Data$SALE_PRICE)
+min(Final_LDA_Data$SALE_PRICE)
+
+# Define the number of categories and the range of values
+num_categories <- 5
+min_price <- min(Final_LDA_Data$SALE_PRICE)
+max_price <- max(Final_LDA_Data$SALE_PRICE)
+
+# Calculate the bin size
+bin_size <- (max_price - min_price) / num_categories
+
+# Create breaks and labels for binning
+breaks <- seq(min_price, max_price, bin_size)
+labels <- c("low", "mid1", "mid2", "mid3", "high")
+
+# Create a new categorical variable for binned SALE_PRICE
+Final_LDA_Data$SALE_PRICE_BIN <- cut(Final_LDA_Data$SALE_PRICE, 
+                                     breaks = breaks,
+                                     labels = labels,
+                                     include.lowest = TRUE)
+
+# View the updated dataset with the binned SALE_PRICE variable
+head(Final_LDA_Data)
+
+NYC_CA_DATA <- Final_LDA_Data[, c("SALE_PRICE_BIN", "BUILDING_CLASS_AT_PRESENT","TAX_CLASS_AT_TIME_OF_SALE","BOROUGH")]
+
+head(NYC_CA_DATA)
+
+# Load the required library
+library(ca)
+
+# Create a contingency table from the two categorical columns
+contingency_table <- table(NYC_CA_DATA$SALE_PRICE_BIN, NYC_CA_DATA$BUILDING_CLASS_AT_PRESENT)
+
+# Perform Correspondence Analysis
+ca_result <- ca(contingency_table)
+
+# Summary of the Correspondence Analysis
+summary(ca_result)
+
+# Plot the Correspondence Analysis
+plot(ca_result,mass = TRUE)
+
+ggplot(NYC_CA_DATA, aes(x = BUILDING_CLASS_AT_PRESENT, fill = SALE_PRICE_BIN)) +
+  geom_bar() +
+  labs(x = "BUILDING_CLASS_AT_PRESENT", y = "Count", fill = "SALE_PRICE_BIN") +
+  theme_minimal()
+
+# Access the coordinates of the categories
+category_coordinates <- ca_result$colcoord
+# Access the contributions of the categories
+category_contributions <- ca_result$colcontrib
+
+plot(ca_result, mass = TRUE,contrib = "absolute", map = "rowgreen" ,arrows =
+c(F,T))
+
+```
+
+Making 5 bins
+
+Category 1 (low): SALE_PRICE <= 215000 + (1 * 288000)
+
+Category 2 (mid1) : 215000 + (1 * 288000) < SALE_PRICE <= 215000 + (2 * 288000)
+Category 3 (mid2): 215000 + (2 * 288000) < SALE_PRICE <= 215000 + (3 * 288000)
+Category 4 (mid3): 215000 + (3 * 288000) < SALE_PRICE <= 215000 + (4 * 288000)
+Category 5 (high): SALE_PRICE > 215000 + (4 * 288000)
+
+The building classes represented by the codes you provided are typically used in the New York City Property Sales dataset. Here's a breakdown of what each code represents:
+
+- A0: One-family dwellings (attached or semi-detached) - generally, homes with one unit and a shared wall with another unit.
+
+- A1: One-family dwellings (semi-detached) - homes with one unit and a separate wall from another unit.
+
+- A2: Two-family dwellings (attached) - homes with two units and a shared wall with another unit.
+
+- A3: Multi-family walk-up apartments (3 or more units, not including co-ops) - typically low-rise buildings with multiple units.
+
+- A4: Multi-family elevator apartments (3 or more units, not including co-ops) - typically mid-rise or high-rise buildings with multiple units and an elevator.
+
+- A5: Cooperative units (apartment buildings) - units in buildings that are collectively owned by shareholders.
+
+- A6: Condominium units (apartment buildings) - individually owned units in buildings with shared common areas.
+
+- A7: Office buildings - buildings primarily used for commercial office space.
+
+- A9: Open space (non-buildable land) - areas without any structures or buildings.
+
+- B1: Store buildings (primarily retail) - buildings used for commercial retail purposes.
+
+- B2: Store buildings (mixed use) - buildings used for a combination of residential and commercial purposes.
+
+- B3: Store buildings (primarily residential) - buildings with residential units above commercial spaces.
+
+- B9: Other stores (hotel, garage, etc.) - buildings used for various purposes, such as hotels or garages.
+
+- C0-C9: Walk-up apartments (mostly 3 to 6 stories) - buildings with walk-up apartments, typically low-rise.
+
+- D1: Elevator apartments (mostly 7 or more stories) - buildings with apartments and an elevator, typically mid-rise or high-rise.
+
+- G0: Miscellaneous mixed-use buildings - buildings used for a combination of different purposes, such as residential and commercial.
+
+- Z0: Open space with a residential building - areas with open space and a residential structure.
+
+- Z9: Miscellaneous structures of any zoning class - miscellaneous structures that do not fit into any specific category.
+
+
+**CA WITH TAX_CLASS_AT_TIME_OF_SALE**
+```{r}
+# Load the required library
+library(ca)
+
+# Create a contingency table from the two categorical columns
+contingency_table <- table(NYC_CA_DATA$SALE_PRICE_BIN, NYC_CA_DATA$TAX_CLASS_AT_TIME_OF_SALE)
+
+# Perform Correspondence Analysis
+ca_result <- ca(contingency_table)
+
+# Summary of the Correspondence Analysis
+summary(ca_result)
+
+# Plot the Correspondence Analysis
+plot(ca_result,mass = TRUE)
+
+ggplot(NYC_CA_DATA, aes(x = TAX_CLASS_AT_TIME_OF_SALE, fill = SALE_PRICE_BIN)) +
+  geom_bar() +
+  labs(x = "TAX_CLASS_AT_TIME_OF_SALE", y = "Count", fill = "SALE_PRICE_BIN") +
+  theme_minimal()
+
+# Access the coordinates of the categories
+category_coordinates <- ca_result$colcoord
+# Access the contributions of the categories
+category_contributions <- ca_result$colcontrib
+
+plot(ca_result, mass = TRUE,contrib = "absolute", map = "rowgreen" ,arrows =
+c(F,T))
+
+
+```
+**TAX CLASSES**
+In the context of New York City property taxation, the tax classes 1, 2, 3, and 4 represent different types of properties and their respective tax assessment rules. Here's an overview of what each tax class represents:
+
+1. Tax Class 1: This tax class is applied to properties that are primarily residential, including one- to three-unit properties (such as single-family homes, duplexes, and triplexes), as well as certain condominiums and cooperatives. Tax Class 1 properties generally receive the lowest property tax rates.
+
+2. Tax Class 2: This tax class is applied to residential properties that are considered multiple-dwelling properties. It includes apartment buildings with three or more units, as well as rental cooperatives and some condominiums. Tax Class 2 properties are subject to higher tax rates compared to Tax Class 1 properties.
+
+3. Tax Class 3: This tax class is applied to utility company-owned properties, such as power plants, transmission lines, and telecommunication facilities. These properties are assessed based on specific tax rules related to their utility use.
+
+4. Tax Class 4: This tax class is applied to commercial properties, including office buildings, retail stores, hotels, and other commercial establishments. It also includes certain mixed-use properties that have a significant portion of commercial space. Tax Class 4 properties generally have higher tax rates compared to residential properties.
+
+It's important to note that the specific definitions and rules for tax classes may vary depending on the municipality and jurisdiction. The above descriptions provide a general understanding of the tax classes as they relate to New York City. For more accurate and detailed information, it's recommended to refer to the specific local tax laws and regulations.
+
+
+
+**CA with BOROUGH**
+```{r}
+# Load the required library
+library(ca)
+
+# Create a contingency table from the two categorical columns
+contingency_table <- table(NYC_CA_DATA$SALE_PRICE_BIN, NYC_CA_DATA$BOROUGH)
+
+# Perform Correspondence Analysis
+ca_result <- ca(contingency_table)
+
+# Summary of the Correspondence Analysis
+summary(ca_result)
+
+# Plot the Correspondence Analysis
+plot(ca_result,mass = TRUE)
+
+ggplot(NYC_CA_DATA, aes(x = BOROUGH, fill = SALE_PRICE_BIN)) +
+  geom_bar() +
+  labs(x = "BOROUGH", y = "Count", fill = "SALE_PRICE_BIN") +
+  theme_minimal()
+
+# Access the coordinates of the categories
+category_coordinates <- ca_result$colcoord
+# Access the contributions of the categories
+category_contributions <- ca_result$colcontrib
+
+plot(ca_result, mass = TRUE,contrib = "absolute", map = "rowgreen" ,arrows =
+c(F,T))
+
+```
+
+In the context of New York City, the borough numbers 1, 2, 3, 4, and 5 represent the five boroughs that make up the city. Each borough is a distinct administrative division with its own characteristics and local government. Here's a breakdown of what each borough represents:
+
+1. Manhattan (Borough 1): Manhattan is the most densely populated borough and is located at the center of New York City. It is known for its iconic skyline, financial district, cultural attractions, and diverse neighborhoods.
+
+2. Bronx (Borough 2): The Bronx is located north of Manhattan and is the only borough that is primarily situated on the mainland of the United States. It is known for its rich history, vibrant culture, and attractions such as the Bronx Zoo and Yankee Stadium.
+
+3. Brooklyn (Borough 3): Brooklyn is located on the western end of Long Island and is known for its diverse neighborhoods, cultural institutions, and lively arts and music scene. It is the most populous borough in New York City.
+
+4. Queens (Borough 4): Queens is located on Long Island, east of Manhattan, and is the largest borough in terms of land area. It is known for its diverse population, international cuisine, and attractions such as Flushing Meadows-Corona Park and Citi Field.
+
+5. Staten Island (Borough 5): Staten Island is located in the southwestern part of the city and is separated from the rest of the city by the waters of the New York Harbor. It is known for its suburban feel, natural landscapes, and attractions such as the Staten Island Ferry and the Staten Island Zoo.
+
+The borough numbers are commonly used to identify and differentiate between the different parts of New York City.
